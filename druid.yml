@@ -1,0 +1,303 @@
+namespace: druid
+
+common:
+  metadata:
+    defines: metadata
+    name: Apache Druid
+    description: Druid is a high performance, real-time analytics database that delivers sub-second queries on streaming and batch data at scale and under load.
+    website: https://druid.apache.org/
+    publisher: monk.io
+    icon: https://druid.apache.org/img/druid_nav.png
+
+druid-common-env:
+  connections:
+    zookeeper:
+      runnable: druid/dzookeeper
+      service: zookeeper-svc
+    db:
+      runnable: druid/db
+      service: postgres-svc
+  variables:
+    java_xmx:
+      type: string
+      value: 1024m
+      env: DRUID_XMX
+    java_xms:
+      type: string
+      value: 1024m
+      env: DRUID_XMS
+    java_max_new_size:
+      type: string
+      value: 256m
+      env: DRUID_MAXNEWSIZE
+    java_max_direct_memory:
+      type: string
+      value: 512m
+      env: DRUID_MAXDIRECTMEMORYSIZE
+    single_node:
+      type: string
+      value: micro-quickstart
+      env: DRUID_SINGLE_NODE_CONF
+    log_level:
+      type: string
+      value: debug
+      env: druid_emitter_logging_logLevel
+    extensions:
+      env: druid_extensions_loadList
+      type: string
+      value: '["druid-histogram", "druid-datasketches", "druid-lookups-cached-global", "postgresql-metadata-storage", "druid-multi-stage-query"]'
+    zookeeper_host:
+      env: druid_zk_service_host
+      type: string
+      value: <- connection-hostname("zookeeper")
+    metadata_storage_type:
+      env: druid_metadata_storage_type
+      type: string
+      value: postgresql
+    metadata_storage_connector_user:
+      env: druid_metadata_storage_connector_user
+      type: string
+      value: monk
+    metadata_storage_connector_password:
+      env: druid_metadata_storage_connector_password
+      type: string
+      value: adminpassword
+    postgres_host:
+      env: druid_postgres_host
+      type: string
+      value: <- connection-hostname("db")
+    metadata_storage_connector_connectURI:
+      env: druid_metadata_storage_connector_connectURI
+      type: string
+      value: <- `jdbc:postgresql://${postgres_host}:5432/monk`
+    log4j:
+      type: string
+      value: '<?xml version="1.0" encoding="UTF-8" ?><Configuration status="WARN"><Appenders><Console name="Console" target="SYSTEM_OUT"><PatternLayout pattern="%d{ISO8601} %p [%t] %c - %m%n"/></Console></Appenders><Loggers><Root level="info"><AppenderRef ref="Console"/></Root><Logger name="org.apache.druid.jetty.RequestLog" additivity="false" level="DEBUG"><AppenderRef ref="Console"/></Logger></Loggers></Configuration>'
+      env: DRUID_LOG4J
+    coordinator_balance:
+      type: string
+      value: cachingCost
+      env: druid_coordinator_balancer_strategy
+    indexer:
+      type: string
+      value: ["-server", "-Xmx1g", "-Xms1g", "-XX:MaxDirectMemorySize=3g", "-Duser.timezone=UTC", "-Dfile.encoding=UTF-8", "-Djava.util.logging.manager=org.apache.logging.log4j.jul.LogManager"]
+      env: druid_indexer_runner_javaOptsArray
+    droid_storage_type:
+      type: string
+      value: local
+      env: druid_storage_type
+    droid_storage_directory:
+      type: string
+      value: /opt/shared
+      env: druid_storage_directory
+    druid_processing_num:
+      type: string
+      value: 2
+      env: druid_processing_numThreads
+    druid_processing_num_merge:
+      type: string
+      value: 2
+      env: druid_processing_numMergeBuffers
+    druid_processing_buffer:
+      type: string
+      value: 56m
+      env: druid_processing_buffer_sizeBytes
+    
+    image_tag:
+      type: string
+      value: 24.0.1
+    broker_port:
+      type: string
+      value: 8082
+    volume_data:
+      type: string
+      value: <- `${monk-volume-path}/druid`
+
+dzookeeper:
+  defines: runnable
+  variables:
+    admin_server:
+      env: ZOO_ADMINSERVER_ENABLED
+      type: bool
+      value: true
+    port:
+      type: int
+      value: 2181
+    image:
+      type: string
+      value: latest
+  containers:
+    db:
+      image: zookeeper
+      image-tag: <- `${image}`
+      ports:
+        - <- `${port}:2181`
+  services:
+    zookeeper-svc:
+      port: 2181
+      container: db
+      protocol: tcp
+
+db:
+  metadata:
+    private: true
+  inherits: postgresql/db
+  defines: runnable
+  variables:
+    db_username:
+      env: POSTGRES_USER
+      value: monk
+      type: string
+    postgres_password:
+      env: POSTGRES_PASSWORD
+      type: string
+      value: adminpassword
+    db_name:
+      env: POSTGRES_DB
+      type: string
+      value: monk
+
+coordinator:
+  defines: runnable
+  inherits: druid/druid-common-env
+  variables:
+    image_tag:
+      type: string
+      value: 24.0.1
+    coodinator_port:
+      type: string
+      value: 8081
+    volume_data:
+      type: string
+      value: <- `${monk-volume-path}/druid`
+  containers:
+    dcoordinator:
+      image-tag: <- `${image_tag}`
+      image: apache/druid
+      bash: /druid.sh coordinator
+      paths:
+        - <- `${volume_data}/shared:/opt/shared`
+        - <- `${volume_data}/coordinator:/opt/druid/var`
+      ports:
+        - <- `${coodinator_port}:8081`
+      environment:
+        - druid_indexer_runner_javaOptsArray=["-server", "-Xmx1g", "-Xms1g", "-XX:MaxDirectMemorySize=3g", "-Duser.timezone=UTC", "-Dfile.encoding=UTF-8", "-Djava.util.logging.manager=org.apache.logging.log4j.jul.LogManager"]
+  services:
+    coordinator-svc:
+      port: 8081
+      container: dcoordinator
+      protocol: tcp
+  depends:
+    wait-for:
+      runnables:
+        - druid/dzookeeper
+        - druid/db
+      timeout: 30
+
+broker:
+  defines: runnable
+  inherits: druid/druid-common-env
+  containers:
+    dbroker:
+      image-tag: <- `${image_tag}`
+      image: apache/druid
+      bash: /druid.sh broker
+      paths:
+        - <- `${volume_data}/shared:/opt/shared`
+      ports:
+        - <- `${broker_port}:8082`
+  depends:
+    wait-for:
+      runnables:
+        - druid/dzookeeper
+        - druid/db
+        - druid/coordinator
+      timeout: 30
+
+historical:
+  defines: runnable
+  inherits: druid/druid-common-env
+  variables:
+    image_tag:
+      type: string
+      value: 24.0.1
+    coodinator_port:
+      type: string
+      value: 8083
+    volume_data:
+      type: string
+      value: <- `${monk-volume-path}/druid`
+  containers:
+    dhistorical:
+      image-tag: <- `${image_tag}`
+      image: apache/druid
+      bash: /druid.sh historical
+      paths:
+        - <- `${volume_data}/shared:/opt/shared`
+      ports:
+        - <- `${coodinator_port}:8083`
+  depends:
+    wait-for:
+      runnables:
+        - druid/dzookeeper
+        - druid/db
+        - druid/coordinator
+      timeout: 30
+
+middlemanager:
+  defines: runnable
+  inherits: druid/druid-common-env
+  variables:
+    image_tag:
+      type: string
+      value: 24.0.1
+    middlemanager_port:
+      type: string
+      value: 8091
+    volume_data:
+      type: string
+      value: <- `${monk-volume-path}/druid`
+  containers:
+    dmiddlemanager:
+      image-tag: <- `${image_tag}`
+      image: apache/druid
+      bash: /druid.sh middleManager
+      paths:
+        - <- `${volume_data}/shared:/opt/shared`
+      ports:
+        - <- `${middlemanager_port}:8091`
+  depends:
+    wait-for:
+      runnables:
+        - druid/dzookeeper
+        - druid/db
+        - druid/coordinator
+
+router:
+  defines: runnable
+  inherits: druid/druid-common-env
+  variables:
+    image_tag:
+      type: string
+      value: 24.0.1
+    router_port:
+      type: string
+      value: 8888
+    volume_data:
+      type: string
+      value: <- `${monk-volume-path}/druid`
+  containers:
+    drouter:
+      image-tag: <- `${image_tag}`
+      image: apache/druid
+      bash: /druid.sh router
+      paths:
+        - <- `${volume_data}/shared:/opt/shared`
+      ports:
+        - <- `${router_port}:8888`
+  depends:
+    wait-for:
+      runnables:
+        - druid/dzookeeper
+        - druid/db
+        - druid/coordinator

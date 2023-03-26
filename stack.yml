@@ -1,0 +1,12 @@
+namespace: druid
+
+stack:
+  defines: process-group
+  runnable-list:
+    - druid/dzookeeper
+    - druid/db
+    - druid/coordinator
+    - druid/broker
+    - druid/historical
+    - druid/middlemanager
+    - druid/router
