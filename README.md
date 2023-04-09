@@ -79,6 +79,6 @@ The variables are in `stack.yml` file. You can quickly setup by editing the valu
 ## Stop, remove and clean up workloads and templates
 
 ```bash
-monk purge -x -a
+monk purge -a
 ```
 
