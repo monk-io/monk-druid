@@ -1,5 +1,6 @@
 ---
 namespace: druid
+
 stack:
   defines: process-group
   runnable-list:
