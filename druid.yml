@@ -13,7 +13,7 @@ base:
       Druid provides a variety of data processing features, including rollup, filtering, and grouping. It also includes support for machine learning algorithms and other advanced analytical functions. Druid includes a number of built-in visualization tools for creating charts, graphs, and other data visualizations.
     website: https://druid.apache.org/
     publisher: monk.io
-    tags:
+    tags: druid, Kafka, Database, Analytics, Streaming, Real-Time, Real Time, Apache, Open Source
     source: https://github.com/apache/druid
     icon: https://druid.apache.org/img/druid_nav.png
   connections:
