@@ -1,0 +1,173 @@
+---
+title: Apache Druid
+description: Ready-to-run Apache Druid container stack you can run directly or inherit to integrate a real-time analytics database into your infrastructure.
+primary_category: database
+tags: [druid, analytics, database, template, runnable, stack, real-time, olap]
+integration_type: template
+hosting_models: [self-hosted]
+website_url: https://druid.apache.org/
+docs_url: https://druid.apache.org/docs/latest/
+publisher: monk.io
+---
+
+## Overview
+
+This template provides a production‑ready Apache Druid stack as a Monk runnable. You can:
+
+- Run it directly to get a managed Druid deployment with all necessary components
+- Inherit it in your own stack to seamlessly add real-time analytics capabilities
+
+Apache Druid is a high-performance real-time analytics database designed for workflows where fast queries and ingest really matter. It excels at powering UIs, running operational (ad-hoc) queries, or handling high concurrency workloads.
+
+## What this template manages
+
+- Druid coordinator (cluster management)
+- Druid broker (query routing)
+- Druid router (HTTP routing)
+- Druid historical (segment serving)
+- Druid middlemanager (task execution)
+- PostgreSQL database (metadata storage)
+- ZooKeeper (coordination)
+
+## Quick start (run directly)
+
+1) Load templates
+
+```bash
+monk load MANIFEST
+```
+
+2) Run Druid stack with defaults
+
+```bash
+monk run druid/stack
+```
+
+3) Customize configuration (recommended via inheritance)
+
+Running directly uses the defaults defined in this template's `variables`. Secrets added with `monk secrets add` will not affect this runnable unless you inherit it and reference those secrets.
+
+- Preferred: inherit and replace variables with `secret("...")` as shown below.
+- Alternative: fork/clone and edit the `variables` in `stack.yml`, then `monk load MANIFEST` and run.
+
+Once started, access the Druid console at `http://localhost:8888` (router) or query the broker at `http://localhost:8082`.
+
+## Configuration
+
+Key variables you can customize in this template:
+
+```yaml
+variables:
+  image_tag: "v2.00.9"                                # Druid container image tag
+  java_xmx: "1024m"                                   # Maximum heap size
+  java_xms: "1024m"                                   # Initial heap size
+  java_max_new_size: "256m"                           # Java max new size
+  java_max_direct_memory: "512m"                      # Max direct memory size
+  single_node: "micro-quickstart"                     # Single node configuration
+  log_level: "debug"                                  # Log level (debug, info, warn, error)
+  metadata_storage_type: "postgresql"                 # Metadata storage backend
+  metadata_storage_connector_user: "monk"             # Metadata DB user
+  metadata_storage_connector_password: "monk"         # Metadata DB password
+  droid_storage_type: "local"                         # Storage type (local, s3, etc.)
+  droid_storage_directory: "/opt/shared"              # Local storage directory
+  druid_processing_num: "2"                           # Number of processing threads
+  druid_processing_num_merge: "2"                     # Number of merge buffers
+  druid_processing_buffer: "56m"                      # Processing buffer size
+  coordinator_balance: "cachingCost"                  # Coordinator balance strategy
+```
+
+Data and deep storage are persisted under `${monk-volume-path}/druid` on the host.
+
+## Stack components
+
+The Druid stack includes the following runnables:
+
+- `druid/coordinator` - Cluster management and segment assignment
+- `druid/broker` - Query routing and result merging
+- `druid/router` - HTTP request routing
+- `druid/historical` - Segment storage and querying
+- `druid/middlemanager` - Task execution and ingestion
+- `druid/db` - PostgreSQL metadata storage
+- `druid/dzookeeper` - ZooKeeper coordination
+
+## Use by inheritance (recommended for apps)
+
+Inherit the Druid stack in your application and declare connections. Example:
+
+```yaml
+namespace: myapp
+analytics:
+  defines: runnable
+  inherits: druid/stack
+  variables:
+    metadata_storage_connector_password:
+      value: <- secret("druid-db-password")
+api:
+  defines: runnable
+  containers:
+    api:
+      image: myorg/api
+  connections:
+    druid:
+      runnable: analytics
+      service: broker
+  variables:
+    druid-broker-url:
+      value: <- connection-hostname("druid") concat-all ":" connection-port("druid")
+```
+
+Then set the secrets once and run your app group:
+
+```bash
+monk secrets add -g druid-db-password="STRONG_DB_PASSWORD"
+monk run myapp/api
+```
+
+## Features
+
+- **Real-time Ingestion**: Ingest streaming data with exactly-once semantics
+- **Fast Queries**: Sub-second queries on large datasets
+- **Scalable**: Horizontally scalable architecture
+- **Column-oriented**: Efficient storage and query execution
+- **Multi-tenant**: Supports multiple tenants and workloads
+- **SQL Support**: Query using SQL or native queries
+
+## Ports and connectivity
+
+- Service: `router` on TCP port `8888` (web console)
+- Service: `broker` on TCP port `8082` (query API)
+- Service: `coordinator` on TCP port `8081`
+- Service: `historical` on TCP port `8083`
+- Service: `middlemanager` on TCP port `8091`
+- From other runnables in the same process group, use `connection-hostname("<connection-name>")` to resolve the service host.
+
+## Persistence and configuration
+
+- Deep storage path: `${monk-volume-path}/druid:/opt/shared`
+- PostgreSQL data: `${monk-volume-path}/postgresql:/var/lib/postgresql/data`
+- ZooKeeper data: `${monk-volume-path}/zookeeper:/data`
+- You can adjust JVM settings and Druid configuration through the template variables.
+
+## Related templates
+
+- See other templates in this repository for complementary services
+- Combine with monitoring tools (`prometheus-grafana/`) for observability
+- Integrate with your application stack as needed
+
+## Troubleshooting
+
+- Ensure all required ports are available (8081-8083, 8088, 8091, 8888)
+- Druid requires ZooKeeper and metadata storage (PostgreSQL) to be running first
+- If you changed `metadata_storage_connector_password` but the database has existing data, authentication may fail. Either reset the data volume or update the password in PostgreSQL.
+- Ensure the host volumes are writable by the container user
+- Check logs for any component:
+
+```bash
+monk logs -l 500 -f local/druid/stack
+monk logs -l 500 -f local/druid/broker
+```
+
+- Verify JVM settings are appropriate for your workload
+- Ensure sufficient memory is available for the configured heap sizes
+- For single-node deployments, use `single_node: "micro-quickstart"` or `"small"`
+
